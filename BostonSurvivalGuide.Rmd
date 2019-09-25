@@ -1,0 +1,1128 @@
+---
+title: "Boston Survival Guide"
+subtitle: BA780 - Fall 2019
+output: html_document
+---
+
+**Team Members:** Alvaro Chinchayan, Leighton Li, Andrey Lifar, Yoki Liu, Yue Ping, Sherry Zuo
+
+**Our Logo:** ![](our_logo.jpeg){width=180px}
+
+****
+>**Overview**
+
+Our team is interested in crimes that were reported in the Boston area (including all 11 districts) from June 2015 to October 2018.    
+The main purpose of our project is to analyze patterns of these crimes, underlying incentives, and to see how other factors such as housing prices, income, population correlate with crimes.  
+We use four Datasets [Crime Data Source](https://www.kaggle.com/ankkur13/boston-crime-data), [Housing Data Source](https://www.zillow.com/boston-ma/home-values/), [Income Data Source](https://statisticalatlas.com/county-subdivision/Massachusetts/Suffolk-County/Boston/Household-Income), [Population](https://statisticalatlas.com/county-subdivision/Massachusetts/Suffolk-County/Boston/Population#figure/county-subdivision-in-boston-area) for our project, and match all three datasets by [Districts](https://bpdnews.com/districts)
+
+***
+> **Table of Content** 
+
+1. Import Data & Data Cleaning & Preview of Data   
+2. Data Analysis    
+* Time Analysis    
+  + Time Series   
+  + Year/month/weekday/hour with the highest crimes  
+  + Regression for time & time_Crime  
+* Location Analysis  
+  + District/street with the highest crimes   
+  + Example Washington St.   
+  + Example Roxbury(B2)  
+  + Example Downtown(A1) 
+  + Distribution of crimes by Districts  
+  + Location, Housing Prices and Crimes -- Distribution & Regression
+  + Location, Income and Crimes -- Distribution & Regression   
+  + Location, Population and Crimes -- Distribution & Regression
+* Crime Attribute Analysis  
+  + Crime Types  
+  + Example Larceny  
+  + Example Shooting  
+* Multivariate Analysis  
+  + Income vs. Housing Prices vs. Crime Amount
+  + Housing Price vs. Population vs. Crime Amount  
+  + Population vs. Income vs. Crime Amount  
+  + Multiple Linear Regression  
+3. Additional Part    
+* Boston University  
+* Commenwealth Ave  
+* Questrom   
+4. Summary    
+
+***
+#### Import Data & Data Cleaning & Preview of Data 
+**Import Data**
+```{r setup, include=FALSE}
+#loading libraries
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(gganimate)
+library(ggplot2)
+library(ggcorrplot)
+library(ggExtra)
+library(graphics)
+library(ggalt)
+library(gifski)
+library(plotrix)
+library(ggpmisc)
+library(gapminder)
+library(ggrepel)
+library(png)
+library(maps)
+library(ggmap)
+register_google(key = "AIzaSyDBTLqQazw5YEqtqGq-4yXV6yBpFNzJLtA")
+```
+
+```{r echo=T, results='hide'}
+boston<-read_csv("crime.csv")
+```
+**Data Cleaning**  
+We removed all missing values from the original dataset and created a new column named "count" to help us count the occurrences of crimes more easily. The initial ymd file was updated to a more workable date frame. We also sorted the data by "DAY_OF_WEEK".   
+```{r echo=T, results='hide'}
+Population<-read_csv("boston_population.csv")
+boston$District <- boston$DISTRICT
+boston<- boston %>% mutate(count=1)
+boston$date <- as.Date(boston$OCCURRED_ON_DATE)
+boston$DAY_OF_WEEK<-factor(boston$DAY_OF_WEEK, levels=c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+boston<-boston %>% inner_join(Population, by="District")%>%select(Crime_Type, District, Region_Name, SHOOTING, date, YEAR, MONTH, DAY_OF_WEEK, HOUR, STREET, Lat, Long, Housing_Price, Income, Population, count)
+any(is.na(boston))
+complete.cases(boston)
+boston<-na.omit(boston)
+```
+
+**Preview of Data**
+```{r}
+colnames(boston)
+```
+```{r}
+head(boston)
+```
+```{r}
+dim(boston)
+```
+Crime in Boston Area
+```{r message=FALSE}
+ggmap(get_googlemap(c(-71.06,42.33),
+                    zoom = 12, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+```
+```{r message=FALSE, warning=FALSE}
+p <- ggmap(get_googlemap(c(-71.06,42.33),
+                    zoom = 12, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+p + geom_point(aes(x = Long, y = Lat), colour = 'red',alpha=0.1, data = boston, size = 0.3) + 
+  theme(legend.position="")
+```
+
+***
+  
+#### Data Analysis
+  
+***
+  
+>**Time Analysis**   
+
+***
+  
+**Time Series**  
+```{r}
+boston %>% 
+  group_by(date)%>%
+  summarize(crime_amount = sum(count))%>%
+  arrange(date)%>%
+  ggplot(aes(x=date, y=crime_amount)) + 
+    geom_line(color="red", alpha=0.7) + 
+    geom_smooth(se=FALSE, col="white")+
+    labs(title="Boston Crimes Time Series Plot", x="Date",y="Crimes Count")+
+    scale_x_date(date_labels = "%b-%Y")+
+    theme(panel.background = element_rect(fill="black"))
+```
+
+```{r}
+boston %>% 
+  group_by(date)%>%
+  summarize(crime_amount = sum(count))%>%
+  arrange(date)%>%
+  ggplot(aes(x=date, y=crime_amount)) + 
+    geom_line(color="red", alpha=0.7) +
+    labs(title="Boston Crimes Time Series Plot", x="Date",y="Crimes Count")+
+    scale_x_date(date_labels = "%b-%Y")+
+    theme(panel.background = element_rect(fill="black"))+
+    transition_reveal(date)
+```
+
+***
+  
+**Year/month/weekday/hour with the highest crimes**    
+*Question:* Which is the year with the highest number of reported crimes on average?  
+```{r}
+boston %>% 
+  group_by(YEAR)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count))
+```
+*Answer:* On average, the highest number of reported crimes occured in 2017.  
+```{r}
+boston %>% 
+  group_by(YEAR)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count))%>%
+  ggplot(aes(x = YEAR, y = crime_count)) + 
+  geom_bar(stat = "identity", width = 0.4, fill = "red",color='white') + 
+  labs(title = "Total Crime, Yearly",
+       y = "Crime Count", 
+       x = "Year") +
+  theme(panel.background = element_rect(fill="black"))+
+  theme(aspect.ratio = 0.5)
+```
+```{r}
+boston %>% 
+  group_by(YEAR)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count))%>%
+  ggplot(aes(x = YEAR, y = crime_count)) + 
+  geom_bar(stat = "identity", width = 0.4, fill = "red",color='white') + 
+  labs(title = "Total Crime, Yearly",
+       y = "Crime Count", 
+       x = "Year") +
+  theme(panel.background = element_rect(fill="black"))+
+  theme(aspect.ratio = 0.5) + 
+  transition_states(YEAR, wrap = FALSE)+ 
+  shadow_mark()
+```
+
+*Question:* Which month of the year has the highest number of reported crimes on average?  
+```{r}
+boston %>% 
+  group_by(MONTH)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count))%>%
+  head()
+```
+*Answer:* On average, the highest number of reported crimes occured in Auguest.
+```{r}
+month <- boston %>% 
+  group_by(MONTH)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count)) 
+
+top_month <- head(month, 4)
+
+ggplot(month, aes(x = MONTH, y = crime_count)) + 
+  geom_point(color = "white",size=4) + 
+  labs(title = "Total Crime, Monthly",
+       y = "Crime Count", 
+       x = "Month") + 
+  scale_x_continuous(breaks = c(1:12)) + 
+  geom_encircle(data=top_month, color = "red", s_shape = 0.5, expand=0.02,size=3) +
+  theme(panel.background = element_rect(fill="black"))
+```
+We found that there were more crimes reported during the summer (June, July, August, and September); this could be explained by the fact that new students start school during these months.  
+  
+*Question:* Which day of the week has the highest amount of crimes?
+```{r}
+boston %>% 
+  group_by(DAY_OF_WEEK)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count))
+```
+*Answer:* On average, Friday has the highest amount of crimes.
+```{r}
+weekday<-boston %>% 
+  group_by(DAY_OF_WEEK)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count))
+top_weekday <- head(weekday, 1)
+ggplot(weekday, aes(x = DAY_OF_WEEK, y = crime_count)) + 
+  geom_point(color = "white",size=4) + 
+  labs(title = "Total Crime, Weekly",
+       y = "Crime Count", 
+       x = "Day of Week") +
+  ylim(34000, 42000)+
+  geom_encircle(data=top_weekday, color = "red", s_shape = 0.2, expand=0.01, size=3)+
+    theme(panel.background = element_rect(fill="black"))+
+  theme(aspect.ratio = 0.4)
+```
+
+*Question:* What time of a day has the highest crime amount on average?
+```{r}
+boston %>% 
+  group_by(HOUR)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count))%>%
+  head()
+```
+*Answer:* On average, the highest crime amount occured at 5pm.
+```{r}
+hour <- boston %>% 
+  group_by(HOUR)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count))
+top_hour <- head(hour, 3)
+ggplot(hour, aes(x = HOUR, y = crime_count)) + 
+  geom_point(color='white') +
+  labs(title = "Total Crime, Hourly",
+       y = "Crime Count", 
+       x = "Hour") + 
+  geom_encircle(data= top_hour, color = "red", s_shape = 0.1, expand=0.04,size=1.5)+
+  theme(panel.background = element_rect(fill="black"))+
+  theme(aspect.ratio = 0.4)
+```
+We found there were more crimes reported during afterschool hours which are 4pm, 5pm, and 6pm; this could be explained by the fact that most people finish their work or school during these hours.    
+*Question:* Do crimes usually happen during the day or the night?
+```{r}
+boston %>% 
+  transmute(count, day_night = case_when(HOUR %in% c(7,8,9,10,11,12,13,14,15,16,17,18) ~ "daytime",
+                                 HOUR %in% c(0,1,2,3,4,5,6,19,20,21,22,23) ~ "night"))%>%
+  group_by(day_night)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count))
+```
+*Answer:* It's more likely for crimes to happen in the daytime. 
+```{r}
+boston %>% 
+  transmute(count, day_night = case_when(HOUR %in% c(7,8,9,10,11,12,13,14,15,16,17,18) ~ "daytime",
+                                 HOUR %in% c(0,1,2,3,4,5,6,19,20,21,22,23) ~ "night"))%>%
+  group_by(day_night)%>%
+  summarize(crime_count=sum(count))%>%
+  arrange(desc(crime_count))%>%
+  ggplot(aes(x="", y=crime_count, fill=day_night))+
+  geom_bar(width = 1, stat="identity", position="fill")+
+  coord_polar("y")+
+  scale_fill_manual(values = c("black", "red"))+
+  theme(panel.background = element_rect(fill="white"))+
+  labs(title = "Day VS Night in crime_count",x='',y='')
+```
+
+***  
+
+**Regression for time & time_Crime**    
+In order to run the regression, we created three dummy variables and assigned a value of 0 or 1 to each of the data entry for every variable. 
+
+* Month Type  
+  + "colder" as 1 : from November to April  
+  + "warmer" as 0 : from May to October  
+* Week Type  
+  + weekends as 1  
+  + weekdays as 0  
+* Hour Type  
+  + Daytime as 1: from 7 am to 6 pm  
+  + Night as 0: from 7 pm to 6 am  
+  
+```{r}
+time_boston <- boston %>% 
+  transmute(count, hour_type = case_when(HOUR %in% c(7,8,9,10,11,12,13,14,15,16,17,18) ~ 1,
+                                 HOUR %in% c(0,1,2,3,4,5,6,19,20,21,22,23) ~ 0),
+            week_type = case_when(DAY_OF_WEEK %in% c("Saturday", "Sunday") ~1,
+            DAY_OF_WEEK %in% c('Monday','Tuesday','Wednesday','Thursday','Friday') ~0), 
+            month_type=case_when(MONTH %in% c(11,12,1,2,3,4) ~ 1,
+                                 MONTH %in% c(5,6,7,8,9,10) ~ 0))
+
+timep <- time_boston %>%
+  group_by(month_type, week_type, hour_type) %>%
+  summarize(time_count=sum(count))
+
+TIME_CRIME <- lm(time_count ~ month_type+week_type+hour_type, data=timep)
+
+summary(TIME_CRIME)
+```
+
+*Answer:*
+Regression Function: predicted number of crime = 63666 - 9582 * month_type(dummy) - 32159 * week_type(dummy) + 17244 * hour_type(dummy)  
+R-square is 0.7899 which is a reliable regression.  
+p-value equals 0.02592 which is smaller than 0.05, so we think the time and crime numbers are significantly correlated.
+
+***
+
+>**Location Analysis**
+
+```{r message=FALSE, warning=FALSE}
+p <- ggmap(get_googlemap(c(-71.06,42.33),
+                    zoom = 12, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+p + geom_point(aes(x = Long, y = Lat,  colour = Crime_Type), alpha=0.8, data = boston, size = 0.3) + 
+  theme(legend.position="")
+```
+```{r message=FALSE, warning=FALSE}
+p <- ggmap(get_googlemap(c(-71.06,42.33),
+                    zoom = 12, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+p + geom_point(aes(x = Long, y = Lat,  colour = Crime_Type), data = boston, size = 0.5) + 
+  theme(legend.position='top',legend.text = element_text(size=4))
+```
+
+
+```{r message=FALSE, warning=FALSE}
+boston %>% group_by(District) %>% mutate(meanlong=mean(Long),meanlat=mean(Lat))->mydis
+mydis$District <- factor(mydis$District)
+p <- ggmap(get_googlemap(c(-71.06,42.33),
+                    zoom = 12, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+p + geom_point(aes(x = Long, y = Lat,colour =District), alpha=0.1, data = boston, size = 0.3) + 
+  theme(legend.position="") +
+  geom_point(aes(x = meanlong, y = meanlat,shape=District), data =mydis, size =2)+ 
+  scale_shape_manual(values=1:nlevels(mydis$District)) + 
+  theme(legend.position='top',legend.text = element_text(size=5))
+```
+
+
+***  
+
+**District/street has the highest crime amount on average**  
+*Question:* Which neighborhood(district) has the ABSOLUTE highest crime amount on average?  
+```{r}
+boston%>%
+  group_by(District, Region_Name)%>%
+  summarize(crime_amount=sum(count)) %>% 
+  arrange(desc(crime_amount))
+```
+*Answer:* On average, B2(Roxbury neighborhood) has the highest ABSOLUTE crime amount.  
+
+*Question:* Which neighborhood(district) has the RELATIVE highest crime amount on average (per 1000 people)?  
+```{r}
+boston%>%
+  select(District, Region_Name, Population, count)%>%
+  mutate(Density_count=count*1000/Population)%>%
+  group_by(District, Region_Name)%>%
+  summarize(crime_amount=sum(Density_count)) %>% 
+  arrange(desc(crime_amount))
+```
+*Answer:* On average, A1(Downtown neighborhood) has the RELATIVE highest crime amount on average (per 1000 people).  
+```{r}
+bostonrank<-boston%>%
+  select(District, Population, count,Long,Lat)%>%
+  mutate(Density_count=count*1000/Population)%>%
+  group_by(District)%>%
+  summarise(crime_amount=round(sum(Density_count),2),meanlong=mean(Long),meanlat=mean(Lat)) %>% 
+  arrange(desc(crime_amount)) %>% mutate(rank=row_number()) %>% unite(disrank,c('rank','District','crime_amount'),sep = '. ')
+bostonrank
+```
+
+
+```{r message=FALSE, warning=FALSE}
+p + geom_point(aes(x = Long, y = Lat,colour =District), alpha=0.1, data = boston, size = 0.3) + 
+  theme(legend.position="") +
+  geom_label_repel(
+    aes(meanlong, meanlat, label = disrank),
+    data=bostonrank,
+    family = 'Times', 
+    size = 2, colors='grey',
+    box.padding = 0.2, point.padding = 0.3,
+    segment.color = 'grey50')   
+```
+*Question:* Which street has the highest crime amount on average?
+```{r}
+boston%>%
+  group_by(STREET)%>%
+  summarize(crime_amount=sum(count),meanlong=mean(Long),meanlat=mean(Lat)) %>% 
+  arrange(desc(crime_amount)) %>%
+  head()
+```
+*Answer:* On average, Washington St. has the highest crime amount. 
+```{r}
+bostonrank2<-boston%>%
+  group_by(STREET)%>%
+  summarize(crime_amount=sum(count),meanlong=mean(Long),meanlat=mean(Lat)) %>% 
+  arrange(desc(crime_amount)) %>%mutate(rank=row_number()) %>% 
+  unite(strrank,c('rank','STREET','crime_amount'),sep = '| ') %>% 
+  head(10)
+```
+```{r message=FALSE, warning=FALSE}
+p + geom_point(aes(x = meanlong, y = meanlat,colour =strrank),data =bostonrank2) + 
+  theme(legend.position="") +
+  geom_label_repel(
+    aes(meanlong, meanlat, label = strrank),
+    data=bostonrank2,
+    family = 'Times', 
+    size = 2, colors='grey',
+    box.padding = 0.2, point.padding = 0.3,
+    segment.color = 'grey50')  
+```
+
+
+```{r message=FALSE, warning=FALSE}
+p + stat_density2d(
+    aes(x = Long, y = Lat, fill = ..level.., alpha = 0.25),
+    size = 0.01, bins = 30, data = boston,
+    geom = "polygon"
+  ) +
+  scale_fill_gradient(low = "blue", high = "red")
+```
+
+```{r message=FALSE, warning=FALSE}
+p +
+  stat_density2d(
+    aes(x = Long, y = Lat, fill = ..level.., alpha = 0.25),
+    size = 0.01, bins = 30, data = boston,
+    geom = "polygon"
+  ) +
+  geom_density2d(data = boston, 
+               aes(x = Long, y = Lat), size = 0.3)+
+  scale_fill_gradient(low = "blue", high = "red")+
+  geom_point(aes(x = meanlong, y = meanlat,colour ='red'),data =bostonrank2,size = 2) + 
+  theme(legend.position="") +
+  geom_label_repel(
+    aes(meanlong, meanlat, label = strrank),
+    data=bostonrank2,
+    family = 'Times', 
+    size = 1.5, colors='grey',
+    box.padding = 0.2, point.padding = 0.3,
+    segment.color = 'grey50')
+```
+
+**Example Washington St.**  
+*Question:* What is the most common types of crime on Washington st?
+```{r}
+boston%>%
+  filter(STREET=="WASHINGTON ST")%>%
+  group_by(Crime_Type)%>%
+  summarize(crime_amount=sum(count)) %>% 
+  arrange(desc(crime_amount)) %>%
+  head(7)
+```
+*Answer:* Larceny is the most common crime in Washington St. and the second most common type is Drug Violation.
+
+```{r message=FALSE, warning=FALSE}
+dangerous_street <- subset(boston, STREET=="WASHINGTON ST")
+p2 <- ggmap(get_googlemap(c(-71.06,42.33),
+                    zoom = 12, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+p2 + geom_point(aes(x = Long, y = Lat), colour = 'red',data = dangerous_street, size = 0.3) + 
+  theme(legend.position="")+
+  labs(title="Map of Washington St.")
+```
+By examining **Washington St.** on a map, we found out the potential reasons why the most dangerous street in Boston goes to Washington St.:     
+(1). Washington St. is the longest street in Boston    
+(2). Boston has more than three streets called "Washington St."    
+
+*Question:* What time in the dat has the highst crime amount?
+```{r}
+boston %>% 
+  filter(STREET == "WASHINGTON ST" & Crime_Type %in% c("Larceny","Drug Violation","Medical Assistance","Investigate Person","Simple Assault","Property Lost")) %>%
+  group_by(hour=factor(HOUR))%>%
+  summarize(crime_count = sum(count)) %>% 
+  arrange(desc(crime_count))
+```
+*Answer:* The highest amount of crime happened at 4pm on Washington Street. In general, it's dangerous from 4pm to 6pm.
+
+**Example Roxbury(B2)**  
+*Question:* What is the most common crime type in Roxbury(B2)?
+```{r}
+boston%>%
+  filter(District=="B2")%>%
+  group_by(Crime_Type)%>%
+  summarize(crime_amount=sum(count)) %>% 
+  arrange(desc(crime_amount)) %>%
+  head(7)
+```
+*Answer:* Medical Assistance is the most common crime type in Roxbury(B2).
+```{r message=FALSE, warning=FALSE}
+dangerous_district <- subset(boston, District=="B2")
+p2 <- ggmap(get_googlemap(c(-71.06,42.33),
+                    zoom = 13, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+p2 + geom_point(aes(x = Long, y = Lat), colour = 'red',data = dangerous_district, size = 0.3) + 
+  theme(legend.position="")+
+  labs(title="Map of Roxbury.")
+```
+*Question:* What time during a day has the highest amount of some common crimes in Roxbury(B2)?  
+```{r}
+boston %>% 
+  filter(District == "B2" & Crime_Type %in% c("Medical Assistance", "Verbal Disputes", "Larceny", "Investigate Person", "Simple Assault", "Vandalism")) %>%
+  group_by(hour=factor(HOUR))%>%
+  summarize(crime_count = sum(count)) %>% 
+  arrange(desc(crime_count))
+```
+*Answer:* 4pm has the highest amount of common crimes and it's not so safe until 8pm.  
+
+*Question:* How do common types of crimes vary throughout a day in Roxbury(B2)?  
+```{r}
+ boston %>% 
+  filter(District == "B2" & Crime_Type %in% c("Medical Assistance", "Verbal Disputes", "Larceny", "Investigate Person", "Simple Assault", "Vandalism"))%>% 
+  group_by(hour = factor(HOUR)) %>% 
+  ggplot(aes(x = Lat, y = Long), zoom = 18) +
+  geom_point(aes(color = Crime_Type, alpha=.005))+
+  scale_size(range = c(1,15))+
+  transition_states(hour)+
+  ggtitle("Roxbury at {closest_state} o'clock")
+```
+*Answer:* The variation corresponds to our conclusions from the time series analysis.    
+
+*Question:* How many cases were reported for each of the most common crime types in Roxbury(B2) by month?  
+```{r}
+boston %>% 
+  filter(District == "B2" & Crime_Type %in% c("Medical Assistance", "Verbal Disputes", "Larceny", "Investigate Person", "Simple Assault", "Vandalism")) %>%
+group_by(month=factor(MONTH), Crime_Type)%>%
+  summarize(crime_count = sum(count))%>%
+  ggplot(aes(month, crime_count, color = Crime_Type))+
+  geom_point()+
+  facet_wrap(~Crime_Type)+
+  labs(title="Common Type of Crime at Roxbury (By Month)")
+```
+*Answer:* There were more crimes during the summer, which matches our previous conclusions.  
+
+**Example Downtown(A1)**  
+```{r message=FALSE, warning=FALSE}
+dangerous_district <- subset(boston, District=="A1")
+p2 <- ggmap(get_googlemap(c(-71.06,42.36),
+                    zoom = 15, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+p2 + geom_point(aes(x = Long, y = Lat), colour = 'red',data = dangerous_district, size = 0.3) + 
+  theme(legend.position="")+
+  labs(title="Map of Downtown(A1)")
+```
+*Question:* How does the total amount of crimes change in a day in Downtown(A1)?  
+```{r}
+boston %>% 
+  filter(District == "A1") %>%
+  group_by(HOUR)%>%
+  summarize(crime_amount = sum(count))%>%
+  arrange(HOUR)%>%
+  ggplot(aes(x=HOUR, y=crime_amount)) + 
+    geom_line(color="red", size=3,alpha=0.7) + 
+    labs(title="Boston Crimes Time Series Plot in Downtown(A1)", x="HOUR",y="Crimes Count")+
+    theme(panel.background = element_rect(fill="black"))+
+  theme(aspect.ratio = 0.3)
+  
+```
+*Answer:* The crime amount constantly increases from 5 am to 5 pm.       
+  
+We want to see what is the top crime in Downtown.  
+```{r}
+boston%>%
+  filter(District=="A1")%>%
+  group_by(Crime_Type)%>%
+  summarize(crime_amount=sum(count)) %>% 
+  arrange(desc(crime_amount)) %>%
+  head(7)
+```
+*Answer:* The most common type of crime in Downtown is Larceny.
+
+*Question:* How does the most common crime change throughout a day in Downtown(A1)?  
+```{r message=FALSE, warning=FALSE}
+ boston %>% 
+  filter(District == "A1" & Crime_Type %in% c("Medical Assistance", "Property Lost", "Larceny", "Simple Assault", "Drug Violation"))%>% 
+  group_by(hour = factor(HOUR))->bosA1
+p2+ 
+  geom_point(data=bosA1,aes(x = Long, y = Lat,color = Crime_Type, alpha=.005))+
+  scale_size(range = c(1,15))+
+  transition_states(hour)+
+  ggtitle("Downtown at {closest_state} o'clock")
+```
+The distribution of crimes in downtown increases from 5 am to 5 pm.  
+```{r message=FALSE, warning=FALSE}
+ boston %>% 
+  filter(District == "A1" & Crime_Type %in% c("Medical Assistance", "Property Lost", "Larceny", "Simple Assault", "Drug Violation"),HOUR==17)%>% 
+  group_by(hour = factor(HOUR))->bosdrug
+p2+ 
+  geom_point(data=bosdrug,aes(x = Long, y = Lat,color = Crime_Type, alpha=.005))+
+  scale_size(range = c(1,15))
+  
+```
+```{r message=FALSE, warning=FALSE}
+ boston %>% 
+  filter(District == "A1" & Crime_Type %in% c("Medical Assistance", "Property Lost", "Larceny", "Simple Assault", "Drug Violation"),HOUR==5)%>% 
+  group_by(hour = factor(HOUR))->bosdrug
+p2+ 
+  geom_point(data=bosdrug,aes(x = Long, y = Lat,color = Crime_Type, alpha=.005))+
+  scale_size(range = c(1,15))
+```
+
+
+Drug Violation in Downtown  
+```{r message=FALSE, warning=FALSE}
+ boston %>% 
+  filter(District == "A1" & Crime_Type %in% c( "Drug Violation"))%>% 
+  group_by(hour = factor(HOUR))->bosdrug
+p2+ 
+  geom_point(data=bosdrug,aes(x = Long, y = Lat,color = Crime_Type, alpha=.005))+
+  scale_size(range = c(1,15))
+```
+```{r message=FALSE, warning=FALSE}
+ boston %>% 
+  filter(District == "A1" & Crime_Type %in% c( "Drug Violation"))%>% 
+  group_by(hour = factor(HOUR))->bosdrug
+p3 <- ggmap(get_googlemap(c(-71.062,42.353),
+                    zoom = 17, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+p3+ 
+  geom_point(data=bosdrug,aes(x = Long, y = Lat,color = Crime_Type, alpha=.005))+
+  scale_size(range = c(1,15))
+```
+We think Drug Violation may cause by those bars there.  
+
+***  
+
+**Location, Housing Prices and Crimes -- Distribution & Regression**  
+We are interested to find a relationship between crimes and housing prices.  
+*Question:* Do housing prices have an effect on the number of crimes?  
+```{r}
+Houseprice_Crimes <- boston %>% 
+  select(District, Housing_Price, count)%>%
+  group_by(District)%>%
+  summarize(housing_price=mean(Housing_Price), crime_count = sum(count)) 
+Houseprice_Crimes
+```
+```{r message=FALSE}
+g <- Houseprice_Crimes %>% 
+  ggplot(aes(x=housing_price,y=crime_count,color=District, size=crime_count))+
+    geom_point() +
+    labs(title = "Crime VS Housing_price",
+       y = "Crime", 
+       x = "Housing_price")+
+    theme(panel.background = element_rect(fill="black"))
+ggMarginal(g, type = "histogram", fill="transparent")
+```
+```{r}
+HP_CRIME <- lm(crime_count ~ housing_price, data=Houseprice_Crimes)
+summary(HP_CRIME)
+```
+*Answer:* 
+Regression Function: predicted number of crime = 2.041e+04 + 3.884e-03*Housing_Price  
+R-square is -0.09435 which is not a reliable regression.  
+The p-value equals 0.8248 which is larger than 0.05, so we think the housing prices and crime numbers are not significantly correlated.
+
+***  
+
+**Location, Income and Crimes -- Distribution & Regression**   
+We are interested to find a relationship between crimes and incomes.    
+*Question:* Do incomes have an effect on the number of crimes?  
+```{r}
+Income_Crimes <- boston %>% 
+  select(District, Income, count)%>%
+  group_by(District)%>%
+  summarize(income=mean(Income), crime_count = sum(count)) 
+Income_Crimes
+```
+```{r message=FALSE}
+g2 <- Income_Crimes %>% 
+  ggplot(aes(x=income,y=crime_count,color=District, size=crime_count))+
+    geom_point()  +
+    labs(title = "Crime VS Income",
+       y = "Crime", 
+       x = "Income")+
+    theme(panel.background = element_rect(fill="black"))
+ggMarginal(g2, type = "histogram", fill="transparent")
+```
+```{r}
+IC_CRIME <- lm(crime_count ~ income, data=Income_Crimes)
+summary(IC_CRIME)
+```
+*Answer:* 
+Regression Function: predicted number of crime = 46970.0582 - 0.3869*Income    
+R-square is 0.3042 which makes it a partially reliable regression.    
+The p-value equals 0.03668 which is smaller than 0.05, so we think the income and crime numbers are significantly correlated.  
+
+***
+
+**Location, Population and Crimes -- Distribution & Regression**  
+We are interested to find a relationship between crimes and populations.  
+*Question:* Do populations have an effect on the number of crimes?
+```{r}
+Population_Crimes <- boston %>% 
+  select(District, Population, count)%>%
+  group_by(District)%>%
+  summarize(population=mean(Population), crime_count = sum(count)) 
+Population_Crimes
+```
+```{r message=FALSE}
+g3 <- Population_Crimes %>% 
+  ggplot(aes(x=population,y=crime_count,color=District, size=crime_count))+
+    geom_point() +
+    labs(title = "Crime VS Population",
+       y = "Crime", 
+       x = "Population")+
+    theme(panel.background = element_rect(fill="black"))
+ggMarginal(g3, type = "histogram", fill="transparent")
+```
+```{r}
+P_CRIME <- lm(crime_count ~ population, data=Population_Crimes)
+summary(P_CRIME)
+```
+*Answer:* 
+Regression Function: predicted number of crime = 1.462e+04 + 2.330e-01*Population  
+R-square is -0.00212 which is not a reliable regression.  
+The p-value equals 0.3463 which is larger than 0.05, so we think the population and crime numbers are not significantly correlated.  
+
+***  
+
+>**Crime Attribute Analysis**
+
+***  
+
+**Crime Types**  
+*Question:* What is the most common crime in Boston?
+```{r}
+boston%>%
+  group_by(Crime_Type)%>%
+  summarize(crime_amount=sum(count))%>%
+  arrange(desc(crime_amount))%>%
+  head()
+```
+*Answer:* Larceny is the most common crime in Boston and the second most common type is Medical Assistance.
+```{r}
+common_crime <- filter(boston, Crime_Type %in% c("Larceny", "Investigate Person", "Simple Assault", "Vandalism"))
+common_crime%>%
+  transmute(MONTH, Common_Crime=Crime_Type, count)%>%
+  group_by(month=factor(MONTH), Common_Crime)%>%
+  summarize(crime_count=sum(count))%>%
+  ggplot(aes(month, crime_count, color=Common_Crime))+
+  geom_point()+
+  facet_grid(.~Common_Crime)+
+  theme(panel.background = element_rect(fill="white"))+
+  labs(title="Common Type of Crime(By Month)")
+```
+
+***  
+
+**Example Larceny**  
+Since Larceny is the most common crime in Boston, we want to see where it happens frequently.  
+```{r}
+boston %>% select(Region_Name, Crime_Type, MONTH) %>% 
+  group_by(Crime_Type, Region_Name,month=factor(MONTH)) %>% 
+  filter(Crime_Type == "Larceny") %>%
+  mutate(total=n())%>%
+  ggplot(aes(month, total, color="red")) + 
+  geom_point() +
+  facet_wrap(~Region_Name) +
+  labs(title="Larceny Monthly Occurrence (By District)")+
+  theme(panel.background = element_rect(fill="white"))
+```
+We find downtown and South End have more larceny cases on average.  
+
+***  
+
+```{r message=FALSE, warning=FALSE}
+larceny <- subset(boston, Crime_Type == "Larceny")
+qmplot(Long, Lat, data = larceny, colour = I('red'), size = I(0.2), darken = .1, alpha=I(0.2), zoom=12) +
+  labs(title="Map of Larceny")
+```
+
+**Example Shooting**  
+We do analysis on shooting incidences specifically.
+*Question:* How many shootings were reported during the four years?
+```{r}
+boston%>%
+  select(SHOOTING, count)%>%
+filter(SHOOTING==1)%>%
+  summarize(shooting=sum(count))
+```
+*Answer:* There were 1005 cases of shooting reported over the four years.  
+```{r}
+shooting <- subset(boston, SHOOTING == 1)
+qmplot(Long, Lat, data = shooting, colour = I('red'), size = I(1), darken = .1, alpha=I(0.5), zoom=12)+
+  labs(title="Map of Shooting")
+```
+```{r}
+boston%>%
+  unite(col="year_month",YEAR, MONTH, sep="-")%>%
+  group_by(year_month)%>%
+  filter(SHOOTING==1)%>%
+  summarize(shooting=sum(count))%>%
+  ggplot(aes(year_month, shooting))+
+  geom_point(color='white',size=3)+
+  theme(axis.text.x=element_text(angle=90))+
+  geom_hline(aes(yintercept=10, color="red"))+
+  theme(panel.background = element_rect(fill="black"))+
+  labs(title="Time Series of Shooting")
+```
+Based on the result, there were more than *10 shootings* during each month on average.  
+```{r}
+boston%>%
+  select(SHOOTING, District, Region_Name, count)%>%
+  filter(SHOOTING==1)%>%
+  group_by(District, Region_Name)%>%
+  summarize(shooting_in_district=sum(count))%>%
+  arrange(desc(shooting_in_district))%>%
+  head(4)
+```
+
+```{r}
+boston%>%
+  select(SHOOTING, District, count)%>%
+  filter(SHOOTING==1)%>%
+  group_by(District)%>%
+  summarize(shooting_in_district=sum(count))%>%
+  ggplot(aes(District, shooting_in_district, size=shooting_in_district, color=District))+
+  geom_point()+
+  theme(panel.background = element_rect(fill="black"))+
+  labs(title='Shooting(By District)')+
+  theme(aspect.ratio = 0.5)
+```
+  
+```{r}
+prop_district<-boston %>% 
+  group_by(Region_Name) %>% 
+  summarize(proportion = sum(SHOOTING)/sum(count))
+prop_district %>% 
+  ggplot(aes(x=Region_Name))+ 
+    geom_col(aes(y=proportion), fill="red")+
+    theme(axis.text.x=element_text(angle=15))+
+    theme(panel.background = element_rect(fill="black"))+
+    labs(title="Absolute Shooting Proportion by District")
+```
+The absolute highest number of shootings was reported in Roxbury and Mattapan.  
+```{r}
+prop_district2<-boston %>% 
+  select(District, Region_Name, Population, SHOOTING, count)%>%
+  mutate(Density_count=count*1000/Population)%>%
+  group_by(District, Region_Name)%>%
+  summarize(crime_amount=sum(Density_count), proportion=sum(SHOOTING)/crime_amount)
+prop_district2 %>% 
+  ggplot(aes(x=Region_Name))+ 
+    geom_col(aes(y=proportion), fill="red")+
+    theme(axis.text.x=element_text(angle=15))+
+    theme(panel.background = element_rect(fill="black"))+
+    labs(title="Relative Shooting Proportion by District")
+```
+The relative highest number of shootings was reported in Roxbury and South Dorchester.    
+```{r}
+no<-boston %>% 
+  filter(SHOOTING==0) %>% 
+  group_by(Crime_Type) %>% 
+  count(name="Total") %>% 
+  arrange(desc(Total))
+as.data.frame(no)
+yes<-boston %>% 
+  filter(SHOOTING==1) %>% 
+  group_by(Crime_Type) %>%
+  count(name="Total") %>% 
+  arrange(desc(Total))
+as.data.frame(yes)
+join<-left_join(yes, no, by="Crime_Type")%>% 
+  mutate(Sum = sum(Total.x+Total.y), Prop = Total.x/Sum) %>% 
+  arrange(desc(Prop))
+head(join,10) %>% 
+  ggplot(aes(x = Crime_Type)) + 
+    geom_col(aes(y=Prop), fill="red")+
+    theme_linedraw()+
+    theme(axis.text.x=element_text(angle=10))+
+    theme(panel.background = element_rect(fill="black"))+
+    labs(title="The Proportion of Shooting by Crime Types")
+```
+Homicides has the highest proportion of shootings.   
+```{r}
+boston %>% 
+  group_by(YEAR,Region_Name) %>% 
+  mutate(amount=sum(SHOOTING)) %>% 
+  arrange(YEAR) %>% 
+  ggplot(aes(YEAR,amount,color=Region_Name)) +
+    geom_line()+
+    ggtitle("Yearly Shooting Trend (By District)")+
+  theme(panel.background = element_rect(fill="black"))
+```
+
+***  
+
+>**Multivariate Analysis**
+
+***  
+
+**Income vs. Housing Prices vs. Crime Amount**
+```{r}
+boston %>% select(Housing_Price,Income, count, District) %>% 
+  group_by(District) %>% summarize(crime_count=sum(count), housing_price=mean(Housing_Price), income=mean(Income))%>%
+  ggplot(aes(income, housing_price, size=crime_count, color=District))+
+  geom_point()+
+  geom_smooth(aes(group=1),method="lm")+
+  theme(panel.background = element_rect(fill="black"), legend.title=element_text(size=7), legend.text=element_text(size=7))+
+  labs(title="Income vs. Housing Prices vs. Crime Amount")
+```
+**Housing Price vs. Population vs. Crime Amount**
+```{r}
+boston %>% select(Housing_Price,Population, count, District) %>% 
+  group_by(District) %>% summarize(crime_count=sum(count), housing_price=mean(Housing_Price), population=mean(Population))%>%
+  ggplot(aes(housing_price, population, size=crime_count, color=District))+
+  geom_point()+
+  geom_smooth(aes(group=1),method="lm")+
+  theme(panel.background = element_rect(fill="black"), legend.title=element_text(size=7), legend.text=element_text(size=7))+
+  labs(title="Housing Price vs. Population vs. Crime Amount")
+```
+**Population vs. Income vs. Crime Amount**
+```{r}
+boston %>% select(Income,Population, count, District) %>% 
+  group_by(District) %>% summarize(crime_count=sum(count), income=mean(Income), population=mean(Population))%>%
+  ggplot(aes(population, income, size=crime_count, color=District))+
+  geom_point()+
+  geom_smooth(aes(group=1),method="lm")+
+  theme(panel.background = element_rect(fill="black"), legend.title=element_text(size=7), legend.text=element_text(size=7))+
+  labs(title="Population vs. Income vs. Crime Amount")
+```
+**Multiple Linear Regression**
+```{r}
+multiple<-boston %>% 
+  select(District, Income, Housing_Price, Population, count)%>%
+  group_by(District)%>%
+  summarize(income=mean(Income), housing_price=mean(Housing_Price), population=mean(Population), crime_count = sum(count))
+multiple
+MultiRegression<-lm(data=multiple, crime_count~income+housing_price+population)
+summary(MultiRegression)
+```
+Regression Function: predicted number of crime = 1.037e+04 - (5.014e-1)Income - (4.849e-2)Housing_Price + (4.050e-1)Population  
+*R-square* is 0.5805 which is larger than the R-square with -0.09(single housing price) and 0.304(single income) and -0.002(single population), so we think multiple linear regression has a higher accuracy than single linear regression.    
+The *p-value* equals 0.01852 which is less than 0.05, so we have 95% of confidence to conclude this multiple linear regression is significant.  
+
+**Correlation Matrix**
+```{r}
+cor_df <- round(cor(multiple[c("income", "housing_price", "population", "crime_count")]), 2)
+ggcorrplot(cor_df, method = "circle", ggtheme=ggplot2::theme(panel.background = element_rect(fill="black")))
+```
+As expected, only income and the number of crimes are partially correlated (negatively). We didn't find statistical evidence for the correlation between the number of crimes and either Housing Prices or Population.   
+
+And we think there are some correlations among Income, Housing Prices, and Population, so we want to consider the multiple linear regression instead of several simple linear regressions.  
+```{r}
+multi<-multiple%>%gather(key="multi", value="Value", income:population)
+multi
+ggplot(multi, aes(x=Value, y=crime_count, col=multi))+
+  geom_point()+
+  geom_smooth(method=lm, se=FALSE)+
+  geom_smooth(aes(group=1), method=lm, linetype=2)+
+  theme(aspect.ratio = 0.6)+
+  theme(panel.background = element_rect(fill="black"))
+```
+
+***
+> **Additional Part**
+
+**Boston University**  
+We selected: Latitude:(-71.175, -71.095); Longitude:(42.346, 42.3555)  
+```{r message=FALSE, warning=FALSE}
+BU<-boston%>%
+  filter(Long>-71.175,Long<-71.095,Lat>42.346,Lat<42.355)
+p <- ggmap(get_googlemap(c(-71.1054,42.3505),
+                    zoom = 14, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+p + geom_point(aes(x = Long, y = Lat), colour = 'blue',alpha=0.1, data = BU, size = 0.3) + 
+  theme(legend.position="")
+```
+```{r message=FALSE, warning=FALSE}
+boston%>%
+  filter(Long>-71.175,Long<-71.095,Lat>42.346,Lat<42.355) ->BU
+p <- ggmap(get_googlemap(c(-71.1054,42.3505),
+                    zoom = 14, scale = 2,
+                    maptype ='terrain',
+                    color = 'color'))
+p + geom_point(aes(x = Long, y = Lat), colour = 'blue',alpha=0.1, data = BU, size = 0.3)+
+stat_density2d(
+    aes(x = Long, y = Lat, fill = ..level.., alpha = 0.25),
+    size = 0.01, bins = 30, data =BU,
+    geom = "polygon"
+  ) +
+  scale_fill_gradient(low = "grey", high = "red")
+```
+The density chart doesn't exhibit much deep red color so we think the Boston University area is safe in general.   
+```{r}
+boston%>%
+  filter(Long>-71.175,Long<-71.095,Lat>42.346,Lat<42.355)%>%
+  group_by(Crime_Type)%>%
+  summarize(crime_amount=sum(count)) %>% 
+  arrange(desc(crime_amount)) %>%
+  head()
+```
+The most common crime near BU is larceny.    
+```{r}
+boston%>%
+  filter(Long>-71.175,Long<-71.095,Lat>42.346,Lat<42.355 & SHOOTING==1)%>%
+  summarize(shooting=sum(count))
+```
+
+**Commenwealth Ave**  
+Commenwealth Avenue follows the green line of the T. 
+```{r}
+boston%>%
+  filter(STREET=="COMMONWEALTH AVE")%>%
+  group_by(Crime_Type)%>%
+  summarize(crime_amount=sum(count)) %>% 
+  arrange(desc(crime_amount)) %>%
+  head()
+```
+```{r}
+boston%>%
+  select(STREET, SHOOTING, count)%>%
+  filter(STREET=="COMMONWEALTH AVE" & SHOOTING==1)%>%
+  summarize(shooting=sum(count))
+```
+```{r}
+near_school <- subset(boston, STREET=="COMMONWEALTH AVE")
+qmplot(Long, Lat, data = near_school, colour = I('red'), size = I(0.5), darken = .1, alpha=I(0.35), zoom=12)+
+  labs(title="Map of COMMONWEALTH AVE")
+```
+There was no shooting reported on Commonwealth Avenue so we think the way home is safe in general.   
+
+**Questrom**    
+As MSBA students, we are curious about safety around Questrom.  
+```{r message=FALSE, warning=FALSE}
+p <- ggmap(get_googlemap(c(-71.0996,42.3494),
+                    zoom = 15, scale = 2,
+                    maptype ='satellite',
+                    color = 'color',))
+p + geom_point(aes(x = Long, y = Lat), colour = 'red',alpha=0.1, data = boston, size = 0.3) + 
+  theme(legend.position="")
+```
+We want to know a few safe paths to the nearest hospitals and police stations from Questrom.   
+```{r message=FALSE, warning=FALSE}
+from <- "questrom school of business, Boston, MA 02215"
+#Beth_Israel_Deaconess_Medical_Center
+to<- "330 Brookline Ave, Boston, MA 02215"
+#Partners_HealthCare_System
+to2<-"800 Boylston St, Boston, MA 02199"
+#Boston University Police Department
+to3<-"32 Harry Agganis Way, Boston, MA 02215"
+#Boston Police Headquarters
+to4<-"1 Schroeder Plaza, Boston, MA 02120"
+(route_df <- route(from, to, structure = "route"))
+(route_df2 <- route(from, to2, structure = "route"))
+(route_df3 <- route(from, to3, structure = "route"))
+(route_df4 <- route(from, to4, structure = "route"))
+qmap("questrom school of business, Boston, MA 02215", zoom = 14) +
+  geom_path(
+    aes(x = lon, y = lat),  colour = "red",
+    size = 1.5, alpha = .5,
+    data = route_df, lineend = "round"
+  ) +
+    geom_path(
+    aes(x = lon, y = lat),  colour = "orange",
+    size = 1.5, alpha = .5,
+    data = route_df2, lineend = "round"
+  ) +
+    geom_path(
+    aes(x = lon, y = lat),  colour = "black",
+    size = 1.5, alpha = .5,
+    data = route_df3, lineend = "round"
+  ) +
+    geom_path(
+    aes(x = lon, y = lat),  colour = "blue",
+    size = 1.5, alpha = .5,
+    data = route_df4, lineend = "round"
+  ) +
+  geom_point(aes(x = Long, y = Lat), colour = 'red',alpha=0.04, data = boston, size = 0.3)+
+  labs(title="Helpful Routes", caption ="From: Questrom
+To: Beth Israel Deaconess Medical Center
+To: Partners HealthCare system
+To: Boston University Police Department
+To: Boston Police Headquarters")
+```
+
+***
+
+> **Summary**  
+
+**Boston is a safe city in general.**   
+
+The most frequent crime is Larceny. Crimes are more likely to happen on Washington St. which has three sections making it the longest street in Boston Area. 
+
+Roxbury has the highest absolute number of crimes, while Downtown has the highest relative number of crimes. Most of them happen between 4 and 6 pm. Housing prices and population don’t have a statistically significant effect on crimes, but income does have a partial significance. 
+
+However, the multiple linear regression including the previous three variables shows significance. More importantly, the area around Boston University is generally safe! 
+
+**We hope our project will help you survive in Boston!!!**  
