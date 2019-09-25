@@ -70,7 +70,7 @@ library(ggrepel)
 library(png)
 library(maps)
 library(ggmap)
-register_google(key = "AIzaSyDBTLqQazw5YEqtqGq-4yXV6yBpFNzJLtA")
+register_google(key = " ")
 ```
 
 ```{r echo=T, results='hide'}
